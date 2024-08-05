@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+        }
+        #start-screen, #chat-interface {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+        #start-screen.active, #chat-interface.active {
+            display: flex;
+        }
+        #start-screen {
+            background: url('{{ url_for('static', filename='image/room.png') }}') no-repeat center center;
+            background-size: cover;
+        }
+        #chat-interface {
+            background: url('{{ url_for('static', filename='image/RealRoom.png') }}') no-repeat center center;
+            background-size: cover;
+            position: relative; /* Added for positioning loading indicator */
+        }
+        #chatbox {
+            width: 300px;
+            height: 400px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            overflow-y: scroll;
+        }
+        #user-input {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .message {
+            margin: 10px 0;
+        }
+        .user {
+            text-align: right;
+        }
+        .bot {
+            text-align: left;
+        }
+        #start-screen img {
+            max-width: 100%;
+            height: auto;
+        }
+        #recording-controls {
+            margin-top: 20px;
+        }
+        #record-button, #stop-button, #upload-button {
+            padding: 10px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+        #stop-button, #upload-button {
+            display: none;
+        }
+        #loading {
+            display: none;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="start-screen" class="active">
+        <h1>Welcome to the Chatbot Game</h1>
+        <img src="{{ url_for('static', filename='image/RealRoom.png') }}" alt="Start Image">
+        <p>Click the button below to start the game!</p>
+        <button id="start-button">Start Game</button>
+    </div>
+    <div id="chat-interface">
+        <div id="chatbox">
+            {% if user_input and response %}
+                <div class="message user">{{ user_input }}</div>
+                <div class="message bot">{{ response }}</div>
+            {% endif %}
+        </div>
+        <form id="chat-form">
+            <input type="text" name="message" id="user-input" placeholder="Type a message..." required>
+            <button type="submit">Send</button>
+        </form>
+
+        <!-- Recording Controls -->
+        <div id="recording-controls">
+            <button id="record-button">Start Recording</button>
+            <button id="stop-button">Stop Recording</button>
+            <button id="upload-button">Upload Recording</button>
+        </div>
+        <input type="file" id="audio-file" style="display: none;">
+        <div id="transcription-result"></div>
+
+        <!-- Loading Indicator -->
+        <div id="loading">로딩 중...</div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+
+        document.getElementById('start-button').addEventListener('click', function() {
+            document.getElementById('start-screen').classList.remove('active');
+            document.getElementById('chat-interface').classList.add('active');
+        });
+
+        document.getElementById('record-button').addEventListener('click', async function() {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.start();
+
+            mediaRecorder.ondataavailable = function(event) {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = function() {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('audio_file', audioBlob, 'recording.wav');
+
+                fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => response.json())
+                  .then(data => {
+                    const transcriptionText = data.text || 'Transcription failed';
+                    document.getElementById('transcription-result').innerText = transcriptionText;
+                    document.getElementById('user-input').value = transcriptionText;  // 채팅 입력 창에 텍스트 삽입
+                }).catch(error => {
+                    document.getElementById('transcription-result').innerText = 'An error occurred';
+                });
+
+                audioChunks = [];
+            };
+
+            document.getElementById('record-button').style.display = 'none';
+            document.getElementById('stop-button').style.display = 'inline';
+        });
+
+        document.getElementById('stop-button').addEventListener('click', function() {
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+            }
+            document.getElementById('stop-button').style.display = 'none';
+            document.getElementById('record-button').style.display = 'inline';
+        });
+
+        document.getElementById('upload-button').addEventListener('click', function() {
+            document.getElementById('audio-file').click();
+        });
+
+        document.getElementById('audio-file').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const formData = new FormData();
+                formData.append('audio_file', file);
+
+                fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => response.json())
+                  .then(data => {
+                    const transcriptionText = data.text || 'Transcription failed';
+                    document.getElementById('transcription-result').innerText = transcriptionText;
+                    document.getElementById('user-input').value = transcriptionText;  // 채팅 입력 창에 텍스트 삽입
+                }).catch(error => {
+                    document.getElementById('transcription-result').innerText = 'An error occurred';
+                });
+            }
+        });
+
+        document.getElementById('chat-form').addEventListener('submit', function(event) {
+            event.preventDefault();  // 폼 제출로 인한 페이지 새로고침 방지
+            const message = document.getElementById('user-input').value;
+
+            // Show loading indicator
+            document.getElementById('loading').style.display = 'inline';
+
+            fetch('/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({
+                    'message': message
+                })
+            }).then(response => response.text())
+              .then(html => {
+                // 응답을 HTML로 파싱하여 chatbox 업데이트
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const chatbox = doc.getElementById('chatbox').innerHTML;
+                document.getElementById('chatbox').innerHTML = chatbox;
+                document.getElementById('user-input').value = '';  // 입력창 비우기
+            }).catch(error => {
+                console.error('Error:', error);
+            }).finally(() => {
+                // Hide loading indicator
+                document.getElementById('loading').style.display = 'none';
+            });
+        });
+    </script>
+</body>
+</html>
