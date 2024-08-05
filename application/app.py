@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import openai
 import os
 
-openai.api_key = "sk-Tf45BjUAYu5dEsN-sw8rYWPjXyTO58jJEZ57Rg4DGQT3BlbkFJ_roB71WcKCbjgQ3DfpCd1fzKpr9Ulw9ngnkcD7bQ0A"
+
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # 세션 암호화를 위한 비밀 키 설정
